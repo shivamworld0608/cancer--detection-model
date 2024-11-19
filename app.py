@@ -4,20 +4,13 @@ import numpy as np
 import tensorflow as tf
 import io
 import os
-import requests
+import time
 
 # Initialize Flask app
 app = Flask(__name__)
 
-# Download the model if it doesn't exist
+# Path to the trained model
 MODEL_PATH = 'trained.keras'
-# MODEL_URL = 'https://cancer-detection-model.onrender.com/trained.keras'  # Your actual public model URL
-# if not os.path.exists(MODEL_PATH):
-#     print("Downloading model...")
-#     response = requests.get(MODEL_URL)
-#     with open(MODEL_PATH, 'wb') as f:
-#         f.write(response.content)
-#     print("Model downloaded successfully.")
 
 # Load the trained model
 model = tf.keras.models.load_model(MODEL_PATH)
@@ -30,15 +23,22 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Define a preprocessing function to resize and normalize the image
-def preprocess_image(image, target_size=(224, 224)):  # Replace (224, 224) with your model's input shape
+def preprocess_image(image, target_size=(224, 224)):
     image = image.resize(target_size)
-    image = np.array(image) / 255.0  # Normalize if your model expects normalized input
+    image = np.array(image) / 255.0  # Normalize
     image = np.expand_dims(image, axis=0)  # Add batch dimension
     return image
+
+# Health check route for debugging
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'ok'}), 200
 
 # Define the prediction route
 @app.route('/predict', methods=['POST'])
 def predict():
+    start_time = time.time()
+
     # Check if a file was uploaded
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -55,15 +55,32 @@ def predict():
         # Read and preprocess the image
         image = Image.open(io.BytesIO(file.read()))
         processed_image = preprocess_image(image)
+        preprocessing_time = time.time() - start_time
+        print(f"Image preprocessing time: {preprocessing_time:.2f} seconds")
 
         # Predict with the model
+        prediction_start = time.time()
         predictions = model.predict(processed_image)
-        
-        # Interpret prediction - this depends on your model output
+        prediction_time = time.time() - prediction_start
+        print(f"Model prediction time: {prediction_time:.2f} seconds")
+
+        # Interpret prediction
         prediction_label = 'Cancerous' if predictions[0][0] > 0.5 else 'Non-cancerous'
 
-        # Return the prediction result as JSON
-        return jsonify({'prediction': prediction_label, 'confidence': float(predictions[0][0])})
+        # Log total request handling time
+        total_time = time.time() - start_time
+        print(f"Total request time: {total_time:.2f} seconds")
+
+        # Return the prediction result
+        return jsonify({
+            'prediction': prediction_label,
+            'confidence': float(predictions[0][0]),
+            'times': {
+                'preprocessing': preprocessing_time,
+                'prediction': prediction_time,
+                'total': total_time
+            }
+        })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -72,4 +89,4 @@ def predict():
 if __name__ == '__main__':
     # Use PORT from the environment variable or default to 5000
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, threaded=True)
