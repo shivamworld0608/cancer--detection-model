@@ -9,11 +9,19 @@ import time
 # Initialize Flask app
 app = Flask(__name__)
 
+# Set maximum allowed file size to 16MB
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+
 # Path to the trained model
 MODEL_PATH = 'trained.keras'
 
 # Load the trained model
-model = tf.keras.models.load_model(MODEL_PATH)
+try:
+    model = tf.keras.models.load_model(MODEL_PATH)
+    print("Model loaded successfully")
+except Exception as e:
+    print(f"Error loading model: {e}")
+    model = None
 
 # Define allowed file extensions
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
@@ -24,10 +32,13 @@ def allowed_file(filename):
 
 # Define a preprocessing function to resize and normalize the image
 def preprocess_image(image, target_size=(224, 224)):
-    image = image.resize(target_size)
-    image = np.array(image) / 255.0  # Normalize
-    image = np.expand_dims(image, axis=0)  # Add batch dimension
-    return image
+    try:
+        image = image.resize(target_size)
+        image = np.array(image) / 255.0  # Normalize
+        image = np.expand_dims(image, axis=0)  # Add batch dimension
+        return image
+    except Exception as e:
+        raise ValueError(f"Error during image preprocessing: {e}")
 
 # Health check route for debugging
 @app.route('/health', methods=['GET'])
@@ -55,10 +66,14 @@ def predict():
         # Read and preprocess the image
         image = Image.open(io.BytesIO(file.read()))
         processed_image = preprocess_image(image)
+
         preprocessing_time = time.time() - start_time
         print(f"Image preprocessing time: {preprocessing_time:.2f} seconds")
 
         # Predict with the model
+        if model is None:
+            return jsonify({'error': 'Model not loaded'}), 500
+
         prediction_start = time.time()
         predictions = model.predict(processed_image)
         prediction_time = time.time() - prediction_start
@@ -83,6 +98,7 @@ def predict():
         })
 
     except Exception as e:
+        print(f"Error during prediction: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Run the app
