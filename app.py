@@ -7,7 +7,7 @@ import os
 import time
 import logging
 
-# Initialize Flask app
+# Initialize Flask app 
 app = Flask(__name__)
 
 # Set maximum allowed file size to 16MB
